@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.preference.PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <SwitchPreference
+        android:key="pref_enable_minus_one"
+        android:title="@string/google_feed_title"
+        android:summary="@string/google_feed_summary"
+        android:defaultValue="true"
+        android:persistent="true"/>
+
+    <SwitchPreference
+        android:key="pref_show_workspace_grad"
+        android:title="@string/workspace_gradient_title"
+        android:summary="@string/workspace_gradient_summary"
+        android:defaultValue="true"
+        android:persistent="true"/>
+
+    <SwitchPreference
+        android:key="pref_show_hotseat_grad"
+        android:title="@string/hotseat_gradient_title"
+        android:summary="@string/hotseat_gradient_summary"
+        android:defaultValue="true"
+        android:persistent="true"/>
+
+    <SwitchPreference
+        android:key="pref_desktop_show_labels"
+        android:title="@string/desktop_show_labels"
+        android:defaultValue="true"
+        android:persistent="true" />
+
+    <SwitchPreference
+        android:key="pref_show_labels_landscape"
+        android:title="@string/show_labels_landscape"
+        android:defaultValue="false"
+        android:persistent="true" />
+
+    <SwitchPreference
+        android:key="pref_lock_desktop"
+        android:title="@string/lock_desktop_title"
+        android:defaultValue="false"
+        android:persistent="true" />
+
+</androidx.preference.PreferenceScreen> 

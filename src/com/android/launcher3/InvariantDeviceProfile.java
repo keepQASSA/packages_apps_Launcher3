@@ -19,7 +19,6 @@ package com.android.launcher3;
 import static com.android.launcher3.Utilities.getDevicePrefs;
 import static com.android.launcher3.config.FeatureFlags.APPLY_CONFIG_AT_RUNTIME;
 import static com.android.launcher3.util.Executors.MAIN_EXECUTOR;
-import static com.android.launcher3.settings.SettingsActivity.GRID_OPTIONS_PREFERENCE_KEY;
 import static com.android.launcher3.util.PackageManagerHelper.getPackageFilter;
 
 import android.annotation.TargetApi;
@@ -28,6 +27,8 @@ import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.SharedPreferences.OnSharedPreferenceChangeListener;
 import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.content.res.TypedArray;
@@ -60,7 +61,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 
-public class InvariantDeviceProfile {
+public class InvariantDeviceProfile implements OnSharedPreferenceChangeListener {
 
     public static final String TAG = "IDP";
     // We do not need any synchronization for this variable as its only written on UI thread.
@@ -74,7 +75,11 @@ public class InvariantDeviceProfile {
     public static final int CHANGE_FLAG_GRID = 1 << 0;
     public static final int CHANGE_FLAG_ICON_PARAMS = 1 << 1;
 
+    public static final String KEY_SHOW_DESKTOP_LABELS = "pref_desktop_show_labels";
+    public static final String KEY_SHOW_DRAWER_LABELS = "pref_drawer_show_labels";
+    public static final String KEY_SHOW_LABELS_LANDSCAPE = "pref_show_labels_landscape";
     public static final String KEY_ICON_PATH_REF = "pref_icon_shape_path";
+    public static final String KEY_WORKSPACE_EDIT = "pref_workspace_edit";
 
     // Constants that affects the interpolation curve between statically defined device profile
     // buckets.
@@ -132,6 +137,8 @@ public class InvariantDeviceProfile {
     private ConfigMonitor mConfigMonitor;
     private OverlayMonitor mOverlayMonitor;
 
+    private Context mContext;
+
     @VisibleForTesting
     public InvariantDeviceProfile() {}
 
@@ -156,9 +163,12 @@ public class InvariantDeviceProfile {
 
     @TargetApi(23)
     private InvariantDeviceProfile(Context context) {
-        String gridName = Utilities.getPrefs(context).getBoolean(GRID_OPTIONS_PREFERENCE_KEY, false)
-                ? Utilities.getPrefs(context).getString(KEY_IDP_GRID_NAME, null)
-                : null;
+        mContext = context;
+
+        SharedPreferences prefs = Utilities.getPrefs(context);
+        prefs.registerOnSharedPreferenceChangeListener(this);
+
+        String gridName = prefs.getString(KEY_IDP_GRID_NAME, null);
         initGrid(context, gridName);
         mConfigMonitor = new ConfigMonitor(context,
                 APPLY_CONFIG_AT_RUNTIME.get() ? this::onConfigChanged : this::killProcess);
@@ -172,6 +182,15 @@ public class InvariantDeviceProfile {
         String newName = initGrid(context, gridName);
         if (newName == null || !newName.equals(gridName)) {
             throw new IllegalArgumentException("Unknown grid name");
+        }
+    }
+
+    @Override
+    public void onSharedPreferenceChanged(SharedPreferences prefs, String key) {
+        if (KEY_SHOW_DESKTOP_LABELS.equals(key) || KEY_SHOW_DRAWER_LABELS.equals(key)) {
+            apply(mContext, CHANGE_FLAG_ICON_PARAMS);
+        } else if (KEY_SHOW_LABELS_LANDSCAPE.equals(key)) {
+            onConfigChanged(mContext);
         }
     }
 
@@ -282,9 +301,9 @@ public class InvariantDeviceProfile {
     private void initGridOption(Context context, ArrayList<DisplayOption> options,
             DisplayOption displayOption, DisplayMetrics metrics) {
         GridOption closestProfile = options.get(0).grid;
-        numRows = closestProfile.numRows;
-        numColumns = closestProfile.numColumns;
-        numHotseatIcons = closestProfile.numHotseatIcons;
+        numRows = Utilities.getGridRows(context, closestProfile.numRows);
+        numColumns = Utilities.getGridColumns(context, closestProfile.numColumns);
+        numHotseatIcons = Utilities.getHotseatIcons(context, closestProfile.numHotseatIcons);
         defaultLayoutId = closestProfile.defaultLayoutId;
         demoModeLayoutId = closestProfile.demoModeLayoutId;
         numFolderRows = closestProfile.numFolderRows;
@@ -293,11 +312,12 @@ public class InvariantDeviceProfile {
 
         mExtraAttrs = closestProfile.extraAttrs;
 
-        iconSize = displayOption.iconSize;
+        float iconSizeModifier = Utilities.getIconSizeModifier(context);
+        iconSize = displayOption.iconSize * iconSizeModifier;
         iconShapePath = getIconShapePath(context);
-        landscapeIconSize = displayOption.landscapeIconSize;
+        landscapeIconSize = displayOption.landscapeIconSize * iconSizeModifier;
         iconBitmapSize = ResourceUtils.pxFromDp(iconSize, metrics);
-        iconTextSize = displayOption.iconTextSize;
+        iconTextSize = displayOption.iconTextSize * iconSizeModifier;
         fillResIconDpi = getLauncherIconDensity(iconBitmapSize);
 
         // If the partner customization apk contains any grid overrides, apply them
@@ -348,9 +368,7 @@ public class InvariantDeviceProfile {
         InvariantDeviceProfile oldProfile = new InvariantDeviceProfile(this);
 
         // Re-init grid
-        String gridName = Utilities.getPrefs(context).getBoolean(GRID_OPTIONS_PREFERENCE_KEY, false)
-                ? Utilities.getPrefs(context).getString(KEY_IDP_GRID_NAME, null)
-                : null;
+        String gridName = Utilities.getPrefs(context).getString(KEY_IDP_GRID_NAME, null);
         initGrid(context, gridName);
 
         int changeFlags = 0;
