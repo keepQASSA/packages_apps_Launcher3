@@ -102,6 +102,7 @@ import com.android.launcher3.graphics.RotationMode;
 import com.android.launcher3.icons.IconCache;
 import com.android.launcher3.keyboard.CustomActionsPopup;
 import com.android.launcher3.keyboard.ViewGroupFocusHelper;
+import com.android.launcher3.lineage.LineageUtils;
 import com.android.launcher3.logging.FileLog;
 import com.android.launcher3.logging.StatsLogUtils;
 import com.android.launcher3.logging.UserEventDispatcher;
@@ -341,6 +342,7 @@ public class Launcher extends BaseDraggingActivity implements LauncherExterns,
 
         setupViews();
         mPopupDataProvider = new PopupDataProvider(this);
+        LauncherNotifications.getInstance().addListener(mPopupDataProvider);
 
         mAppTransitionManager = LauncherAppTransitionManager.newInstance(this);
 
@@ -455,7 +457,7 @@ public class Launcher extends BaseDraggingActivity implements LauncherExterns,
                     ? RotationMode.NORMAL : UiFactory.getRotationMode(mDeviceProfile);
         }
         getRootView().dispatchInsets();
-        getStateManager().reapplyState(cancelCurrentAnimation);
+        mStateManager.reapplyState(cancelCurrentAnimation);
     }
 
     @Override
@@ -736,7 +738,7 @@ public class Launcher extends BaseDraggingActivity implements LauncherExterns,
                 final Runnable onComplete = new Runnable() {
                     @Override
                     public void run() {
-                        getStateManager().goToState(NORMAL);
+                        mStateManager.goToState(NORMAL);
                     }
                 };
 
@@ -895,7 +897,7 @@ public class Launcher extends BaseDraggingActivity implements LauncherExterns,
         mAppWidgetHost.setListenIfResumed(false);
 
         NotificationListener.removeNotificationsChangedListener();
-        getStateManager().moveToRestState();
+        mStateManager.moveToRestState();
 
         UiFactory.onLauncherStateOrResumeChanged(this);
 
@@ -930,7 +932,7 @@ public class Launcher extends BaseDraggingActivity implements LauncherExterns,
             mModel.refreshShortcutsIfRequired();
 
             // Set the notification listener and fetch updated notifications when we resume
-            NotificationListener.setNotificationsChangedListener(mPopupDataProvider);
+            NotificationListener.setNotificationsChangedListener(LauncherNotifications.getInstance());
 
             DiscoveryBounce.showForHomeIfNeeded(this);
 
@@ -1020,6 +1022,13 @@ public class Launcher extends BaseDraggingActivity implements LauncherExterns,
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         mStateManager.onWindowFocusChanged();
+    }
+
+    public void startActivitySafelyAuth(View v, Intent intent, ItemInfo item,
+            String sourceContainer) {
+        LineageUtils.showLockScreen(this, getString(R.string.trust_apps_manager_name), () -> {
+            startActivitySafely(v, intent, item, sourceContainer);
+        });
     }
 
     public interface LauncherOverlay {
@@ -2547,7 +2556,7 @@ public class Launcher extends BaseDraggingActivity implements LauncherExterns,
             switch (keyCode) {
                 case KeyEvent.KEYCODE_A:
                     if (isInState(NORMAL)) {
-                        getStateManager().goToState(ALL_APPS);
+                        mStateManager.goToState(ALL_APPS);
                         return true;
                     }
                     break;
@@ -2605,7 +2614,7 @@ public class Launcher extends BaseDraggingActivity implements LauncherExterns,
     @Override
     public void returnToHomescreen() {
         super.returnToHomescreen();
-        getStateManager().goToState(LauncherState.NORMAL);
+        mStateManager.goToState(LauncherState.NORMAL);
     }
 
     /**

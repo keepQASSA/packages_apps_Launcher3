@@ -17,6 +17,7 @@
 package com.android.launcher3;
 
 import static com.android.launcher3.ItemInfoWithIcon.FLAG_ICON_BADGED;
+import static com.android.launcher3.util.Executors.MODEL_EXECUTOR;
 
 import android.animation.ValueAnimator;
 import android.annotation.TargetApi;
@@ -24,9 +25,15 @@ import android.app.ActivityManager;
 import android.app.Person;
 import android.app.WallpaperManager;
 import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.LauncherActivityInfo;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.PackageManager.NameNotFoundException;
 import android.content.pm.ResolveInfo;
 import android.content.pm.ShortcutInfo;
 import android.content.res.Resources;
@@ -46,19 +53,20 @@ import android.os.Handler;
 import android.os.Message;
 import android.os.PowerManager;
 import android.os.TransactionTooLargeException;
-import android.provider.Settings;
 import android.text.Spannable;
 import android.text.SpannableString;
 import android.text.TextUtils;
 import android.text.style.TtsSpan;
 import android.util.DisplayMetrics;
 import android.util.Log;
+import android.util.Pair;
 import android.util.TypedValue;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.animation.Interpolator;
 
+import com.android.launcher3.LauncherModel;
 import com.android.launcher3.compat.LauncherAppsCompat;
 import com.android.launcher3.compat.ShortcutConfigActivityInfo;
 import com.android.launcher3.dragndrop.FolderAdaptiveIcon;
@@ -68,7 +76,6 @@ import com.android.launcher3.icons.LauncherIcons;
 import com.android.launcher3.shortcuts.DeepShortcutManager;
 import com.android.launcher3.shortcuts.ShortcutKey;
 import com.android.launcher3.util.IntArray;
-import com.android.launcher3.util.PackageManagerHelper;
 import com.android.launcher3.views.Transposable;
 import com.android.launcher3.widget.PendingAddShortcutInfo;
 
@@ -108,23 +115,27 @@ public final class Utilities {
     public static final boolean ATLEAST_OREO =
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.O;
 
+    private static final long WAIT_BEFORE_RESTART = 250;
+
     /**
      * Set on a motion event dispatched from the nav bar. See {@link MotionEvent#setEdgeFlags(int)}.
      */
     public static final int EDGE_NAV_BAR = 1 << 8;
 
+    public static final String SLEEP_GESTURE = "pref_sleep_gesture";
+    public static final String SHOW_WORKSPACE_GRADIENT = "pref_show_workspace_grad";
+    public static final String SHOW_HOTSEAT_GRADIENT = "pref_show_hotseat_grad";
+    public static final String ICON_SIZE = "pref_icon_size";
+    public static final String GRID_COLUMNS = "pref_grid_columns";
+    public static final String GRID_ROWS = "pref_grid_rows";
+    public static final String HOTSEAT_ICONS = "pref_hotseat_icons";
+    public static final String LOCK_DESKTOP_KEY = "pref_lock_desktop";
+
     /**
      * Indicates if the device has a debug build. Should only be used to store additional info or
      * add extra logging and not for changing the app behavior.
      */
-    public static final boolean IS_DEBUG_DEVICE =
-            Build.TYPE.toLowerCase(Locale.ROOT).contains("debug") ||
-            Build.TYPE.toLowerCase(Locale.ROOT).equals("eng");
-
-    public static boolean isDevelopersOptionsEnabled(Context context) {
-        return Settings.Global.getInt(context.getApplicationContext().getContentResolver(),
-                        Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, 0) != 0;
-    }
+    public static final boolean IS_DEBUG_DEVICE = false;
 
     // An intent extra to indicate the horizontal scroll of the wallpaper.
     public static final String EXTRA_WALLPAPER_OFFSET = "com.android.launcher3.WALLPAPER_OFFSET";
@@ -139,12 +150,6 @@ public final class Utilities {
 
     public static boolean isPropertyEnabled(String propertyName) {
         return Log.isLoggable(propertyName, Log.VERBOSE);
-    }
-
-    public static boolean existsStyleWallpapers(Context context) {
-        ResolveInfo ri = context.getPackageManager().resolveActivity(
-                PackageManagerHelper.getStyleWallpapersIntent(context), 0);
-        return ri != null;
     }
 
     /**
@@ -350,6 +355,69 @@ public final class Utilities {
 
     public static float mapRange(float value, float min, float max) {
         return min + (value * (max - min));
+    }
+
+    public static boolean isSystemApp(Context context, String pkgName) {
+        return isSystemApp(context, null, pkgName);
+    }
+
+    public static boolean isSystemApp(Context context, Intent intent) {
+        return isSystemApp(context, intent, null);
+    }
+
+    public static boolean isSystemApp(Context context, Intent intent, String pkgName) {
+        PackageManager pm = context.getPackageManager();
+        String packageName = null;
+        // If the intent is not null, let's get the package name from the intent.
+        if (intent != null) {
+            ComponentName cn = intent.getComponent();
+            if (cn == null) {
+                ResolveInfo info = pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY);
+                if ((info != null) && (info.activityInfo != null)) {
+                    packageName = info.activityInfo.packageName;
+                }
+            } else {
+                packageName = cn.getPackageName();
+            }
+        }
+        // Otherwise we have the package name passed from the method.
+        else {
+            packageName = pkgName;
+        }
+        // Check if the provided package is a system app.
+        if (packageName != null) {
+            try {
+                PackageInfo info = pm.getPackageInfo(packageName, 0);
+                return (info != null) && (info.applicationInfo != null) &&
+                        ((info.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0);
+            } catch (NameNotFoundException e) {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    }
+
+    /*
+     * Finds a system apk which had a broadcast receiver listening to a particular action.
+     * @param action intent action used to find the apk
+     * @return a pair of apk package name and the resources.
+     */
+    static Pair<String, Resources> findSystemApk(String action, PackageManager pm) {
+        final Intent intent = new Intent(action);
+        for (ResolveInfo info : pm.queryBroadcastReceivers(intent, 0)) {
+            if (info.activityInfo != null &&
+                    (info.activityInfo.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0) {
+                final String packageName = info.activityInfo.packageName;
+                try {
+                    final Resources res = pm.getResourcesForApplication(packageName);
+                    return Pair.create(packageName, res);
+                } catch (NameNotFoundException e) {
+                    Log.w(TAG, "Failed to find resources for " + packageName);
+                }
+            }
+        }
+        return null;
     }
 
     /**
@@ -624,4 +692,87 @@ public final class Utilities {
             return mSize;
         }
     }
+
+    public static boolean isWorkspaceEditAllowed(Context context) {
+        SharedPreferences prefs = getPrefs(context.getApplicationContext());
+        return prefs.getBoolean(InvariantDeviceProfile.KEY_WORKSPACE_EDIT, true);
+    }
+
+    public static boolean useSleepGesture(Context context) {
+        return getPrefs(context).getBoolean(SLEEP_GESTURE, true);
+    }
+
+    public static boolean showWorkspaceGradient(Context context) {
+        return getPrefs(context).getBoolean(SHOW_WORKSPACE_GRADIENT, true);
+    }
+
+    public static boolean showHotseatGradient(Context context) {
+        return getPrefs(context).getBoolean(SHOW_HOTSEAT_GRADIENT, true);
+    }
+
+    public static boolean isDesktopLocked(Context context) {
+        return getPrefs(context).getBoolean(LOCK_DESKTOP_KEY, false);
+    }
+
+    public static void restart(final Context context) {
+        MODEL_EXECUTOR.execute(() -> {
+            try {
+                Thread.sleep(WAIT_BEFORE_RESTART);
+            } catch (Exception ignored) {
+            }
+            android.os.Process.killProcess(android.os.Process.myPid());
+        });
+    }
+
+    public static float getIconSizeModifier(Context context) {
+        String saved = getPrefs(context).getString(ICON_SIZE, "average");
+        float offset;
+        switch (saved) {
+            case "extrasmall":
+                offset = 0.75F;
+                break;
+            case "small":
+                offset = 0.90F;
+                break;
+            case "average":
+                offset = 1.00F;
+                break;
+            case "large":
+                offset = 1.10F;
+                break;
+            case "extralarge":
+                offset = 1.25F;
+                break;
+            default:
+                offset = 1.00F;
+                break;
+        }
+        return offset;
+    }
+
+    public static int getGridColumns(Context context, int fallback) {
+        return getIconCount(context, GRID_COLUMNS, fallback);
+    }
+
+    public static int getGridRows(Context context, int fallback) {
+        return getIconCount(context, GRID_ROWS, fallback);
+    }
+
+    public static int getHotseatIcons(Context context, int fallback) {
+        return getIconCount(context, HOTSEAT_ICONS, fallback);
+    }
+
+    private static int getIconCount(Context context, String preferenceName, int preferenceFallback) {
+        String saved = getPrefs(context).getString(preferenceName, "-1");
+        try {
+            int num = Integer.valueOf(saved);
+            if (num == -1) {
+                return preferenceFallback;
+            }
+            return num;
+        } catch (Exception e) {
+            return preferenceFallback;
+        }
+    }
+
 }
