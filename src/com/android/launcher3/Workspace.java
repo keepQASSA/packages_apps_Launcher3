@@ -63,8 +63,8 @@ import android.view.ViewTreeObserver;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.Toast;
 
-import com.android.internal.util.du.ActionUtils;
-import com.android.internal.util.du.Utils;
+import com.android.internal.util.qassa.ActionUtils;
+import com.android.internal.util.qassa.qassaUtils;
 
 import com.android.launcher3.Launcher.LauncherOverlay;
 import com.android.launcher3.LauncherAppWidgetHost.ProviderChangedListener;
